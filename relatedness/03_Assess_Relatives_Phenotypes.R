@@ -1,4 +1,4 @@
-#### Determine relatedness with PHI statistic 
+#### Determine relatedness  
 setwd('/dss/dsslegfs01/pr53da/pr53da-dss-0021/projects/2021__Cuckoo_Resequencing/vcfs/all_samples-2022_11/host/merged_full')
 .libPaths('~/mambaforge/envs/r/lib/R/library')
 library(tidyverse)
@@ -6,38 +6,44 @@ library(viridis)
 library(adegenet)
 library(vcfR)
 library(ggpubr)
+library(scales)
 
-#for brevity analyze these chroms
+# Analyze LD-pruned relatedness from vcftools --relatedness2, KING coefficient 
 rel <- read.table('autos_canorus_LD.relatedness2',header=T) %>% select(1,2,7) %>% as_tibble
 names(rel) <- c('ID_A','ID_B','PHI')
 rel = rel %>% mutate(PHI = pmax(0, pmin(0.5, PHI)))
 rel = rel %>% filter(ID_A != ID_B)
 
-#compare with plink IBS0
+# Compare with plink IBS0
 pk = read.table('autos_canorus_LD.ibs',sep=' ',header=TRUE); names(pk) = c('ID_A','ID_B','IBS0')
 relpk = left_join(pk,rel)
 
-#values from here https://www.kingrelatedness.com/manual.shtml
+# Values from here for designating relationships https://www.kingrelatedness.com/manual.shtml
 fam = relpk %>% mutate(Relationship = ifelse(PHI > 0.354, 'First Degree',
                                              ifelse(PHI > 0.177, 'First Degree',
                                                     ifelse(PHI > 0.0884,'Second Degree',
                                                            ifelse(PHI > 0.0442, 'Third Degree',
                                                                   ifelse(PHI <= 0.0442,'Unrelated','Unassigned'))))))
-fam %>% filter(PHI > 0.354) #usually > 0.354 is MZ twin / duplicate, but since our highest value is 0.393 and most around 0.37, seems more likely they are just first degree
-phi_ibs = fam %>% ggplot(aes(x=PHI,y=IBS0,col=Relationship))+
-  geom_point()+
-  scale_color_viridis(discrete=TRUE)+
-  theme_bw()
-pdf('../figures/Relatedness__PhivIBS_2023OCT27.pdf',height=5,width=6)
-phi_ibs
-dev.off()
 
-#add mtDNA differences
+fam %>% filter(PHI > 0.354) #usually > 0.354 is MZ twin / duplicate, but since our highest value is 0.393 and most around 0.37, seems more likely they are just first degree
+
+# For visualizing KING vs IBS
+# phi_ibs = fam %>% ggplot(aes(x=PHI,y=IBS0,col=Relationship))+
+#   geom_point()+
+#   scale_color_viridis(discrete=TRUE)+
+#   theme_bw()
+# pdf('../figures/Relatedness__PhivIBS_2023OCT27.pdf',height=5,width=6)
+# phi_ibs
+# dev.off()
+
+# Add mtDNA differences, calculated externally which identifies pairwise SNPs between samples for mtDNA
 mt = read.table('chrMT_Pairwise_Differences.txt')
 names(mt) = c('ID_A','ID_B','Sites','SNPs')
+# The script counted diploid genotypes as 2 SNPs, so divide by 2
+mt <- mt %>% mutate(SNPs = SNPs / 2)
 fam2 = left_join(fam,mt) %>% drop_na(SNPs)
 
-#remove redundant comparisons
+# Remove redundant comparisons, e.g. ID_A vs ID_B or pairwise redundancies
 famrm = fam2 %>% 
   select(-IBS0) %>% 
   rowwise() %>% 
@@ -46,31 +52,76 @@ famrm = fam2 %>%
   distinct(pair, .keep_all = T) %>% 
   separate(pair,into=c('ID_A','ID_B'),remove=F,sep=',') %>% ungroup() %>% select(-pair)
 
-#remove unrelated individuals ... first merge with metadata
-md = read_tsv('../Cuckoo_Full_Metadata_2023OCT3.txt')
-md = md %>% select(c(ID,HostParentShort,Habitat,BNB,Sampling_Year,KDist,Hap,Sex))
+# Merge with metadata
+md = read_tsv('~/merondun/cuculus_host/relatedness/Full_Metadata.txt')
+md = md %>% select(c(ID,HostParentShort,Habitat,Egg,KDist,Sampling_Year,Hap,Sex,Age))
 mda = md
+
+# Add an '_A' and '_B' to each metadata field 
 names(mda) = paste0(names(mda),'_A')
 mdb = md
 names(mdb) = paste0(names(mdb),'_B')
 fam3 = left_join(famrm,mda) %>% 
   left_join(.,mdb)
 
-#inspect 
+# Mislabeled sample, exclude
+fam3 <- fam3 %>% filter(!grepl('148_',ID_A) & !grepl('148_',ID_B))
+
+# Inspect, look to see which haps don't align, etc 
 fam3 %>% filter(Relationship == 'First Degree' & Hap_A != Hap_B) %>% data.frame
 fam3 %>% filter(Relationship == 'First Degree' & KDist_A != KDist_B) %>% data.frame
-fam3 %>% filter(Relationship == 'First Degree' & BNB_A != BNB_B) %>% data.frame
+fam3 %>% filter(Relationship == 'First Degree' & Egg_A != Egg_B) %>% data.frame
 
-famd = fam3 %>% filter(KDist_A == KDist_B) #only compare within the same distance clade
-famd = famd %>% filter(abs(Sampling_Year_A - Sampling_Year_B) <= 2) #only compare within the same sampling year (e.g. SIBLINGS)
-famd = famd %>% drop_na(Habitat_A) %>% drop_na(Habitat_B)
-famd %>% filter(Relationship == 'First Degree') %>% ggplot(aes(x=SNPs,fill=ID_A))+geom_histogram(show.legend = F)+theme_bw()
-famd = famd %>% mutate(Line = ifelse(SNPs <= 3,'Maternal','Paternal'))
+# Only retain those with known egg morph, which are NESTLINGS, and which are caught within 2 years ( no parent / sibling)
+famd = fam3 %>% drop_na(Egg_A) %>% drop_na(Egg_B)
+famd = famd %>% filter(KDist_A == KDist_B) # Only compare within the same distance clade
+famd = famd %>% filter(Age_A == 'Young' & Age_B == 'Young') # Only compare within YOUNG NESTLINGS!
+famd %>% count(Age_A,Age_B)
+famd = famd %>% filter(abs(Sampling_Year_A - Sampling_Year_B) <= 2) # Only compare within the same sampling year (e.g. SIBLINGS)
+famd %>% count(Age_A,Age_B) #n = 2806
+
+# Within first degree relatives, what's the distribution of the # of mtDNA snps? 
+famd %>% filter(Relationship == 'First Degree') %>% 
+  ggplot(aes(x=SNPs))+geom_histogram(show.legend = F)+theme_bw()+
+  scale_x_continuous(breaks=pretty_breaks(n=14))
+
+# If mtDNA haplotypes are identical, assign as maternal. 
+famd = famd %>% mutate(Line = ifelse(SNPs <= 1,'Maternal','Paternal'))
 famd %>% filter(Relationship == 'First Degree') %>%  count(Line)
-# famd = famd %>% mutate(Relationship = ifelse(Relationship == 'First Degree',paste0(Relationship,' ',Line),
-#                                              ifelse(Relationship == 'Second Degree',paste0(Relationship,' ',Line),Relationship)))
+famd %>% filter(Relationship != 'Unrelated') %>% count(Line)
+
+#simply assign unrelated as paternal, move pie chart in final plot 
 famd = famd %>% mutate(Line = ifelse(Relationship == 'Unrelated','Paternal',Line))
-famd %>% filter(Relationship == 'Second Degree') %>% filter(Line == 'Maternal') %>% filter(HostParentShort_A != HostParentShort_B) %>% data.frame
+
+# and remove first degree relatives, OR NOT! 
+#famd = famd %>% filter(Relationship != 'First Degree')
+
+famd %>% filter(Relationship != 'Unrelated') %>% count(Relationship,Line)
+#Without first
+# Line         n
+# <chr>    <int>
+#   1 Maternal    63
+# 2 Paternal    97
+
+#With first
+# Line         n
+# <chr>    <int>
+#   1 Maternal   128
+# 2 Paternal   147
+
+# Relationship  Line         n
+# <chr>         <chr>    <int>
+#   1 First Degree  Maternal    65
+# 2 First Degree  Paternal    50
+# 3 Second Degree Maternal    25
+# 4 Second Degree Paternal    42
+# 5 Third Degree  Maternal    38
+# 6 Third Degree  Paternal    55
+
+nrow(famd)
+#[1] 2691 with no first degree, [1] 2806 with first degree, or [1] 2948 with no age and year restrictions
+#how many unique individuals?
+length(unique(c(famd$ID_A,famd$ID_B)))
 
 #function to get matched data
 get_matched_data <- function(df) {
@@ -79,11 +130,11 @@ get_matched_data <- function(df) {
       Host = ifelse(HostParentShort_A == HostParentShort_B, 'Matched', 'Unmatched'),
       Habitat = ifelse(Habitat_A == Habitat_B, 'Matched', 'Unmatched'),
       Year = ifelse(abs(Sampling_Year_A - Sampling_Year_B) <= 2, 'Matched', 'Unmatched'),
-      BNB = ifelse(BNB_A == BNB_B, 'Matched', 'Unmatched'),
+      Egg = ifelse(Egg_A == Egg_B, 'Matched', 'Unmatched'),
       Distance = ifelse(KDist_A == KDist_B, 'Matched', 'Unmatched'),
       Haplogroup = ifelse(Hap_A == Hap_B, 'Matched', 'Unmatched')
     ) %>% 
-    gather(key = "Variable", value = "Matched", Host, Habitat, Year, BNB, Distance,Haplogroup) %>% 
+    gather(key = "Variable", value = "Matched", Host, Habitat, Year, Egg, Distance,Haplogroup) %>% 
     group_by(Relationship,Line,Variable) %>% 
     count(Matched)
 }
@@ -112,52 +163,97 @@ mm <- mm %>%
     frame == "fm" ~ "Intersexual",
     TRUE ~ frame)) %>% dplyr::rename(Count = n)
 
-#proportions for pies
-piece = mm %>% group_by(Relationship,Variable,frame) %>% na.omit %>% mutate(Total = sum(Count),
-                                                                            Proportion = Count/Total,
-                                                                            Percent = paste0(round(Count/Total,3)*100,'% (',Total,')'))
-
-#or if you want to merge them 
+#proportions for pie charts
 piece = mm %>% select(-frame) %>% group_by(Relationship,Line,Variable,Matched) %>% na.omit %>% summarize(Count = sum(Count)) %>% ungroup %>% group_by(Relationship,Line,Variable) %>% 
   mutate(Total = sum(Count),
          Proportion = Count/Total,
          Percent = paste0(round(Count/Total,3)*100,'% (',Total,')'))
-piece = piece %>% mutate(Variable = gsub('Host','Host Parent',Variable),
-                         Variable = gsub('BNB','Is Blue',Variable)) %>% 
-  filter(!grepl('Year|Blue|Distance|Hap',Variable))
+piece = piece %>% filter(!grepl('Year|Distance|Hap',Variable))
 
 #plot
 relpie = piece %>% 
-  #filter(grepl('Distance|Microhabitat|Year|Haplogroup',Variable)) %>% ##supplement 
-  #filter(grepl('Inversion',Variable)) %>% ##supplement 
-  #filter(frame == 'Female-Female') %>% 
   ggplot(aes(x="",y=Proportion,fill=Matched))+
   geom_bar(stat='identity')+
   coord_polar("y", start=0)+xlab('')+ylab('')+
   facet_grid(Relationship~Variable+Line)+
   scale_fill_manual(values=c('forestgreen','grey95','black'))+
-  theme_bw()+labs(fill='Phenotype Matching')+
+  theme_bw(base_size=7)+labs(fill='Phenotype Matching')+
   theme(axis.text = element_blank(),
         axis.ticks = element_blank(),
         panel.grid  = element_blank(),
         panel.border = element_rect(colour = "black", fill=NA, size=1))
+#add labels showing the % matched, and then the total sample size 
 labs = piece %>% 
-  #filter(grepl('Distance|Microhabitat|Year|Haplogroup',Variable)) %>%  #supplement
-  #filter(grepl('Inversion',Variable)) %>%  #supplement
-  #filter(grepl('Egg|Haplogroup',Variable)) %>% 
   filter(Matched == 'Matched')
 piesR = relpie + 
   geom_label(data = labs, 
              aes(y=Inf,x=-Inf,label=Percent),fill='white',
-             size=3,vjust=.3,hjust=.5,alpha=0.8)
+             size=2,vjust=.3,hjust=.5,alpha=0.8)
 piesR
 
-pdf('../figures/Relatives_Phenotype_Matching-Sex-Supplement__2023NOV2.pdf',height=8,width=14)
-pdf('../figures/Relatives_Phenotype_Matching-PAT-MAT__2023NOV7.pdf',height=7,width=6)
+pdf('../figures/20241210-Relatives_Phenotype_Matching-1Mismatch-FIRSTDEGREE.pdf',height=4.5,width=6)
 piesR
 dev.off()
 
-#also add missingness
+famd %>% filter(Relationship != 'Unrelated' & Egg_A != Egg_B & Line == 'Paternal') %>%
+  count(Relationship,Egg_A,Egg_B)
+
+famd %>% filter(Relationship != 'Unrelated' & Egg_A == Egg_B & Line == 'Maternal') %>% 
+  count(Relationship,Egg_A,Egg_B)
+
+famd %>% count(Relationship,Egg_A,Egg_B,Line)
+
+## Aggregate
+df_agg <- famd %>% 
+  count(Relationship,Egg_A,Egg_B,Line) %>% 
+  mutate(
+    Egg = pmin(Egg_A, Egg_B),  # ensures consistent grouping
+    Match = ifelse(Egg_A == Egg_B, n, 0),
+    Unmatch = ifelse(Egg_A != Egg_B, n, 0)
+  ) %>%
+  group_by(Relationship, Egg, Line) %>%
+  summarise(
+    Match = sum(Match),
+    Unmatch = sum(Unmatch),
+    .groups = "drop"
+  )
+
+# Supplementary table 
+df_agg %>% data.frame
+
+# Plot matched 
+df_agg %>% 
+  filter(Relationship != 'Unrelated') %>% 
+  pivot_longer(c(Match,Unmatch)) %>% 
+  ggplot(aes(y=Egg,x=value,fill=name))+
+  xlab('Count')+
+  geom_bar(col='black',stat='identity',position=position_dodge(width=0.5))+
+  facet_grid(Relationship~Line,scales='free',space='free_y')+
+  theme_bw()
+
+# Perform Fisher's test for each Relationship category
+results <- df_agg %>%
+  group_by(Relationship) %>%
+  summarise(
+    p_value = list(
+      fisher.test(matrix(c(sum(Match[Line == "Maternal"]),
+                           sum(Unmatch[Line == "Maternal"]),
+                           sum(Match[Line == "Paternal"]),
+                           sum(Unmatch[Line == "Paternal"])),
+                         nrow = 2))$p.value
+    )
+  ) %>%
+  unnest(p_value)
+print(results)
+# Relationship   p_value
+# <chr>            <dbl>
+#   1 First Degree  0.435   
+# 2 Second Degree 0.525   
+# 3 Third Degree  0.000118
+# 4 Unrelated     1   
+
+
+#also add missingness, we will remove individual with more missing data if both are females or both are males 
 miss <- read.table('autos_canorus_LD.imiss',head=T) %>% select(c(1,5))
 names(miss) = c('ID_A','Missing_A')
 miss$Missing_A = as.numeric(miss$Missing_A)
@@ -165,8 +261,11 @@ miss = miss %>% na.omit
 fam4 = fam3 %>% left_join(.,miss) %>% 
   merge(.,miss %>% dplyr::rename(ID_B=ID_A,Missing_B=Missing_A)) 
 
+#Remove unrelateds
 reli = fam4 %>% filter(Relationship != 'Unrelated')
 relatives = fam4
+
+#Unique samples to test 
 samples <- unique(c(reli$ID_A,reli$ID_B))
 rm <- NULL 
 choice <- reli
