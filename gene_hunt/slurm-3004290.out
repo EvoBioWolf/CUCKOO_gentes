@@ -1,0 +1,27 @@
+FILTERING AND MERGING VARIANT SITES FOR chr_W, PLOIDY: 1
+Warn: subset called for sample that does not exist in header: "008_CC_RED_FIN_M"... skipping
+Warn: subset called for sample that does not exist in header: "009_CC_RED_FIN_M"... skipping
+Warn: subset called for sample that does not exist in header: "024_CC_RED_FIN_M"... skipping
+Warn: subset called for sample that does not exist in header: "085_CC_RED_FIN_M"... skipping
+Warn: subset called for sample that does not exist in header: "092_CC_RED_FIN_M"... skipping
+Warn: subset called for sample that does not exist in header: "182_CB_GBC_CHN_M"... skipping
+Warn: subset called for sample that does not exist in header: "230_CB_ASC_CHN_M"... skipping
+Warn: subset called for sample that does not exist in header: "255_CC_SRT_RUS_M"... skipping
+Warn: subset called for sample that does not exist in header: "084_CC_BRA_FIN_M"... skipping
+Warn: subset called for sample that does not exist in header: "018_CC_GRW_HUN_M"... skipping
+Warn: subset called for sample that does not exist in header: "064_CC_GRW_BGR_M"... skipping
+Warn: subset called for sample that does not exist in header: "078_CC_MSH_BGR_M"... skipping
+Warn: subset called for sample that does not exist in header: "145_CC_GRW_BGR_M"... skipping
+Warn: subset called for sample that does not exist in header: "149_CC_GRW_BGR_M"... skipping
+Warn: subset called for sample that does not exist in header: "164_CC_ORW_CHN_M"... skipping
+Warn: subset called for sample that does not exist in header: "169_CC_ORW_CHN_M"... skipping
+Warn: subset called for sample that does not exist in header: "175_CC_ORW_CHN_M"... skipping
+Warn: subset called for sample that does not exist in header: "218_CC_IBS_CHN_M"... skipping
+Warn: subset called for sample that does not exist in header: "232_CC_ORW_CHN_M"... skipping
+Warn: subset called for sample that does not exist in header: "240_CC_ORW_CHN_M"... skipping
+Warn: subset called for sample that does not exist in header: "244_CC_ORW_CHN_M"... skipping
+Warn: subset called for sample that does not exist in header: "037_CC_ERW_DNK_M"... skipping
+Warn: subset called for sample that does not exist in header: "098_CC_ERW_POL_M"... skipping
+Filled 4064674 alleles
+Filled 93624 alleles
+Filled 1538434 alleles

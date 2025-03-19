@@ -3,13 +3,21 @@
 #SBATCH --get-user-env
 #SBATCH --mail-user=merondun@bio.lmu.de
 #SBATCH --clusters=biohpc_gen
-#SBATCH --partition=biohpc_gen_production
-#SBATCH --cpus-per-task=5
-#SBATCH --time=200:00:00
+#SBATCH --partition=biohpc_gen_normal
+#SBATCH --cpus-per-task=2
+#SBATCH --time=48:00:00
 
 # mamba activate snps
-# for CHR in $(cat Chromosomes.list); do sbatch -J FST_${CHR} ~/merondun/cuculus_host/gene_hunt/1A.Subset_Groups_AllinOne_FST.sh ${CHR}; done
+# for CHR in $(cat Chromosomes.list); do sbatch -J Filter_${CHR} ~/EvoBioWolf/CUCKOO_gentes/gene_hunt/2.Refilter_VCF.sh ${CHR}; done
 CHR=$1
+
+# Modify WD depending on canorus or optatus 
+WD=/dss/dsslegfs01/pr53da/pr53da-dss-0021/projects/2021__Cuckoo_Resequencing/vcfs/all_samples-2022_11/host/gwas_n3/canorus
+raw_vcfs=/dss/dsslegfs01/pr53da/pr53da-dss-0021/projects/2021__Cuckoo_Resequencing/vcfs/all_samples-2022_11/merged/snps_only/
+
+cd $WD
+
+mkdir -p vcfs
 
 #genotypes BELOW this will be set to missing
 MINDP=3
@@ -18,7 +26,7 @@ if [[ $CHR = 'chr_W' || $CHR = 'chr_MT' ]]; then
         PLOIDY=1
 
         echo "FILTERING AND MERGING VARIANT SITES FOR ${CHR}, PLOIDY: ${PLOIDY}"
-        bcftools view --threads 5 --samples-file AllSamples.list --force-samples -Ou ../../../merged/snps_only/${CHR}.SNPS.vcf.gz | \
+        bcftools view --threads 5 --samples-file AllSamples.list --force-samples -Ou ${raw_vcfs}/${CHR}.SNPS.vcf.gz | \
                 bcftools view --types snps --min-alleles 2 --max-alleles 2 --threads 5 | \
                 #set genotypes below MINDP to missing
                 bcftools +setGT -- -t q -i "FMT/DP < ${MINDP}" -n "./." | \
@@ -37,7 +45,7 @@ else
         PLOIDY=2
 
         echo "FILTERING AND MERGING VARIANT SITES FOR ${CHR}, PLOIDY: ${PLOIDY}"
-        bcftools view --threads 5 --samples-file AllSamples.list -Ou ../../../merged/snps_only/${CHR}.SNPS.vcf.gz | \
+        bcftools view --threads 5 --samples-file AllSamples.list -Ou ${raw_vcfs}/${CHR}.SNPS.vcf.gz | \
                 bcftools view --types snps --min-alleles 2 --max-alleles 2 --threads 5 | \
                 #set genotypes below MINDP to missing
                 bcftools +setGT -- -t q -i "FMT/DP < ${MINDP}" -n "./." | \
