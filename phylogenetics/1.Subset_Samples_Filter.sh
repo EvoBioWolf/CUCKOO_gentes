@@ -7,20 +7,23 @@
 #SBATCH --cpus-per-task=20
 #SBATCH --time=24:00:00
 
-#mamba activate snps
-#to submit all iterations: for j in $(cat SUBSETS.list); do for i in $(cat CHRS.list); do sbatch -J TREE_${i}_${j} ~/merondun/cuculus_host/phylogenetics/1.Subset_Samples_Filter.sh ${i} ${j} ; done ; done
-mkdir vcfs ml_trees
-
+WD=/dss/dsslegfs01/pr53da/pr53da-dss-0021/projects/2021__Cuckoo_Resequencing/vcfs/all_samples-2022_11/host/phylogenetics/202503_snapp
+raw_vcfs=/dss/dsslegfs01/pr53da/pr53da-dss-0021/projects/2021__Cuckoo_Resequencing/vcfs/all_samples-2022_11/merged/snps_only
 #mask with male-biased coverage 
 mask=/dss/dsslegfs01/pr53da/pr53da-dss-0021/assemblies/Cuculus.canorus/VGP.bCucCan1.pri/Coverage_Masks/GCA_017976375.1_bCucCan1.pri_genomic.CHR.N75-DoubleCoverage.mask.bed
 
-CHR=$1
-SAMP=$2
+cd ${WD} 
+
+#mamba activate snps
+# sbatch 1.Subset_Samples_Filter.sh
+mkdir -p vcfs ml_trees
+
+for CHR in chr_MT chr_W; do 
 
 #minimum coverage, LESS than this set to missing 
 MINDP=3
 echo "FILTERING AND MERGING VARIANT SITES FOR ${CHR}"
-bcftools view --threads 10 --samples-file ${CHR}_${SAMP}.list -Ou ../../../merged/${CHR}.vcf.gz | \
+bcftools view --threads 10 --samples-file Females_With_Outgroups.list -Ou ${raw_vcfs}/${CHR}.SNPS.vcf.gz | \
         bcftools view --types snps --min-alleles 2 --max-alleles 2 --threads 10 | \
         #remove SNPs in bad coverage regions 
         bedtools subtract -header -a - -b ${mask} | \
@@ -34,32 +37,25 @@ bcftools view --threads 10 --samples-file ${CHR}_${SAMP}.list -Ou ../../../merge
         #bcftools +fixploidy -Ou - -- -f 1 | \
         #update AC fields 
         bcftools +fill-tags -Ou -- -t AC,AN | \
-        bcftools view --min-alleles 2 --max-alleles 2 --types snps --min-ac 1 -Oz -o vcfs/${CHR}_${SAMP}.SNP.DP3.vcf.gz 
-bcftools index --threads 10 vcfs/${CHR}_${SAMP}.SNP.DP3.vcf.gz 
-
-#also filter on DP 
-bcftools query -f '%CHROM\t%POS\t%INFO/DP\t%INFO/MQ\n' vcfs/${CHR}_${SAMP}.SNP.DP3.vcf.gz > ${CHR}_${SAMP}_dp_stats.txt
-mean=$(cat ${CHR}_${SAMP}_dp_stats.txt | datamash mean 3 | xargs printf "%.0f\n")
-sd=$(cat ${CHR}_${SAMP}_dp_stats.txt | datamash sstdev 3 | xargs printf "%.0f\n")
-low=$(echo "$mean - 2*$sd" | bc)
-high=$(echo "$mean + 2*$sd" | bc)
-
-rm ${CHR}_${SAMP}_dp_stats.txt
+        bcftools view --min-alleles 2 --max-alleles 2 --types snps --min-ac 1 -Oz -o vcfs/${CHR}.SNP.DP3.vcf.gz 
+bcftools index --threads 10 vcfs/${CHR}.SNP.DP3.vcf.gz 
 
 #filter, include singletons 
-bcftools view vcfs/${CHR}_${SAMP}.SNP.DP3.vcf.gz --min-alleles 2 --max-alleles 2 --min-ac 1 --max-af 0.999 --types snps -i "MQ>40 & INFO/DP > ${low} & INFO/DP < ${high} & F_MISSING < 0.1" -Oz -o vcfs/${CHR}_${SAMP}.SNP.DP3-AC1-MQ40.vcf.gz
-bcftools index --threads 10 vcfs/${CHR}_${SAMP}.SNP.DP3-AC1-MQ40.vcf.gz 
+bcftools view vcfs/${CHR}.SNP.DP3.vcf.gz --min-alleles 2 --max-alleles 2 --min-ac 1 --max-af 0.999 --types snps -i "MQ>40 & F_MISSING < 0.1" -Oz -o vcfs/${CHR}.SNP.DP3-AC1-MQ40-MM1.vcf.gz
+bcftools index --threads 10 vcfs/${CHR}.SNP.DP3-AC1-MQ40-MM1.vcf.gz
+
+#filter, exclude singletons 
+bcftools view vcfs/${CHR}.SNP.DP3.vcf.gz --min-alleles 2 --max-alleles 2 --min-ac 2 --max-af 0.999 --types snps -i "MQ>40 & F_MISSING < 0.1" -Oz -o vcfs/${CHR}.SNP.DP3-AC2-MQ40-MM1.vcf.gz
+bcftools index --threads 10 vcfs/${CHR}.SNP.DP3-AC2-MQ40-MM1.vcf.gz
 
 #create tree  
-python ~/modules/vcf2phylip.py -i vcfs/${CHR}_${SAMP}.SNP.DP3-AC1-MQ40.vcf.gz -f --output-folder ml_trees
-iqtree --redo -keep-ident -T 20 -s ml_trees/${CHR}_${SAMP}.SNP.DP3-AC1-MQ40.min4.phy --seqtype DNA -m "MFP+ASC" -alrt 1000 -B 1000
-iqtree --redo -keep-ident -T 20 -s ml_trees/${CHR}_${SAMP}.SNP.DP3-AC1-MQ40.min4.phy.varsites.phy --seqtype DNA -m "MFP+ASC" -alrt 1000 -B 1000
-
-#filter with NO SINGLETONS 
-bcftools view vcfs/${CHR}_${SAMP}.SNP.DP3.vcf.gz --min-alleles 2 --max-alleles 2 --min-ac 2 --max-af 0.999 --types snps -i "MQ>40 & INFO/DP > ${low} & INFO/DP < ${high} & F_MISSING < 0.1" -Oz -o vcfs/${CHR}_${SAMP}.SNP.DP3-AC2-MQ40.vcf.gz
-bcftools index --threads 10 vcfs/${CHR}_${SAMP}.SNP.DP3-AC2-MQ40.vcf.gz 
+python ~/modules/vcf2phylip.py -i vcfs/${CHR}.SNP.DP3-AC1-MQ40-MM1.vcf.gz -f --output-folder ml_trees
+iqtree --redo -keep-ident -T 20 -s ml_trees/${CHR}.SNP.DP3-AC1-MQ40-MM1.min4.phy --seqtype DNA -m "MFP+ASC" -alrt 1000 -B 1000
+iqtree --redo -keep-ident -T 20 -s ml_trees/${CHR}.SNP.DP3-AC1-MQ40-MM1.min4.phy.varsites.phy --seqtype DNA -m "MFP+ASC" -alrt 1000 -B 1000
 
 #create tree NO SINGLETONS   
-python ~/modules/vcf2phylip.py -i vcfs/${CHR}_${SAMP}.SNP.DP3-AC2-MQ40.vcf.gz -f --output-folder ml_trees
-iqtree --redo -keep-ident -T 20 -s ml_trees/${CHR}_${SAMP}.SNP.DP3-AC2-MQ40.min4.phy --seqtype DNA -m "MFP+ASC" -alrt 1000 -B 1000
-iqtree --redo -keep-ident -T 20 -s ml_trees/${CHR}_${SAMP}.SNP.DP3-AC2-MQ40.min4.phy.varsites.phy --seqtype DNA -m "MFP+ASC" -alrt 1000 -B 1000
+python ~/modules/vcf2phylip.py -i vcfs/${CHR}.SNP.DP3-AC2-MQ40-MM1.vcf.gz -f --output-folder ml_trees
+iqtree --redo -keep-ident -T 20 -s ml_trees/${CHR}.SNP.DP3-AC2-MQ40-MM1.min4.phy --seqtype DNA -m "MFP+ASC" -alrt 1000 -B 1000
+iqtree --redo -keep-ident -T 20 -s ml_trees/${CHR}.SNP.DP3-AC2-MQ40-MM1.min4.phy.varsites.phy --seqtype DNA -m "MFP+ASC" -alrt 1000 -B 1000
+
+done 
