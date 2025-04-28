@@ -3,8 +3,11 @@
 Estimating the strength of the relationship between genetic and geographic distance with separman's Rho and LMMs. 
 
 1: Calculate geographic pairwise distance 
+
 2: Calculate pairwise FST for autosomal and Z data 
+
 3 & 4: AMOVA for distance of mtDNA and W chromosome haplotypes
+
 5: Plot 
 
 ## Distance Correlations 
